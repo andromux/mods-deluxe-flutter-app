@@ -90,6 +90,11 @@ class ModManager {
     return false;
   }
 
+  // Método público para acceder al scraping desde la UI
+  Future<Mod?> scrapeMod(String url) async {
+    return await _scrape(url);
+  }
+
   Future<Mod?> _scrape(String url) async {
     try {
       final resp = await http.get(Uri.parse(url));
@@ -146,6 +151,8 @@ class _ModManagerAppState extends State<ModManagerApp> {
   final TextEditingController urlCtrl = TextEditingController();
   String lang = 'es';
   bool loading = false;
+  bool refreshing = false;
+  String refreshStatus = '';
 
   final texts = {
     'es': {
@@ -155,6 +162,7 @@ class _ModManagerAppState extends State<ModManagerApp> {
       'view': 'Ver en la Web',
       'download': 'Descargar',
       'delete': 'Eliminar',
+      'refresh': 'Actualizar Mods',
       'no_mods': 'No hay mods favoritos',
       'processing': 'Procesando…',
       'invalid_url': 'URL inválida',
@@ -162,6 +170,11 @@ class _ModManagerAppState extends State<ModManagerApp> {
       'mod_added': '¡Mod agregado!',
       'mod_error': 'Error al agregar mod',
       'mod_deleted': 'Mod eliminado',
+      'refreshing': 'Actualizando mods…',
+      'refresh_complete': 'Actualización completada',
+      'mods_updated': 'mods actualizados',
+      'checking_mod': 'Verificando mod',
+      'of': 'de',
     },
     'en': {
       'title': 'SM64 Mod Manager',
@@ -170,6 +183,7 @@ class _ModManagerAppState extends State<ModManagerApp> {
       'view': 'View Web',
       'download': 'Download',
       'delete': 'Delete',
+      'refresh': 'Update Mods',
       'no_mods': 'No favorite mods',
       'processing': 'Processing…',
       'invalid_url': 'Invalid URL',
@@ -177,6 +191,11 @@ class _ModManagerAppState extends State<ModManagerApp> {
       'mod_added': 'Mod added!',
       'mod_error': 'Error adding mod',
       'mod_deleted': 'Mod deleted',
+      'refreshing': 'Updating mods…',
+      'refresh_complete': 'Update completed',
+      'mods_updated': 'mods updated',
+      'checking_mod': 'Checking mod',
+      'of': 'of',
     }
   };
 
@@ -212,6 +231,65 @@ class _ModManagerAppState extends State<ModManagerApp> {
     }
   }
 
+  // ✨ Función principal de actualización
+  Future<void> _refreshMods() async {
+    if (manager.favorites.isEmpty) return;
+    
+    setState(() {
+      refreshing = true;
+      refreshStatus = '';
+    });
+
+    int updatedCount = 0;
+    final totalMods = manager.favorites.length;
+
+    for (int i = 0; i < manager.favorites.length; i++) {
+      final oldMod = manager.favorites[i];
+      
+      // Actualizar estado de progreso
+      setState(() {
+        refreshStatus = '${t('checking_mod')} ${i + 1} ${t('of')} $totalMods';
+      });
+
+      try {
+        // Scrape la versión actual del mod
+        final updatedMod = await manager.scrapeMod(oldMod.url);
+
+        // Si se obtuvo el mod y la versión cambió, actualizar
+        if (updatedMod != null && updatedMod.version != oldMod.version) {
+          manager.favorites[i] = updatedMod;
+          updatedCount++;
+        }
+      } catch (e) {
+        // Si hay error en un mod específico, continuar con el siguiente
+        print('Error actualizando mod ${oldMod.title}: $e');
+      }
+
+      // Esperar 2 segundos entre cada solicitud para no saturar la web
+      if (i < manager.favorites.length - 1) {
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+
+    // Guardar cambios
+    await manager._save();
+    
+    setState(() {
+      refreshing = false;
+      refreshStatus = '';
+    });
+
+    // Mostrar resultado
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${t('refresh_complete')}: $updatedCount ${t('mods_updated')}'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -220,6 +298,19 @@ class _ModManagerAppState extends State<ModManagerApp> {
         appBar: AppBar(
           title: Text(t('title')),
           actions: [
+            // ✨ Botón de actualizar mods
+            IconButton(
+              icon: refreshing 
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+              onPressed: (loading || refreshing) ? null : _refreshMods,
+              tooltip: t('refresh'),
+            ),
+            const SizedBox(width: 8),
             DropdownButton<String>(
               value: lang,
               underline: const SizedBox(),
@@ -250,7 +341,7 @@ class _ModManagerAppState extends State<ModManagerApp> {
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                    onPressed: loading ? null : _addMod,
+                    onPressed: (loading || refreshing) ? null : _addMod,
                     child: loading
                         ? const SizedBox(
                             height: 16,
@@ -262,6 +353,27 @@ class _ModManagerAppState extends State<ModManagerApp> {
                 ],
               ),
             ),
+            
+            // ✨ Mostrar estado de actualización
+            if (refreshing)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                color: Colors.blue.withOpacity(0.1),
+                child: Column(
+                  children: [
+                    Text(
+                      t('refreshing'),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    if (refreshStatus.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(refreshStatus, style: const TextStyle(fontSize: 12)),
+                    ],
+                  ],
+                ),
+              ),
+
             Expanded(
               child: manager.favorites.isEmpty
                   ? Center(child: Text(t('no_mods')))
@@ -305,7 +417,7 @@ class _ModManagerAppState extends State<ModManagerApp> {
                                     IconButton(
                                       icon: const Icon(Icons.delete,
                                           color: Colors.red),
-                                      onPressed: () => _remove(m.url),
+                                      onPressed: (refreshing) ? null : () => _remove(m.url),
                                     )
                                   ],
                                 )

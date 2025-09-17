@@ -1,0 +1,5 @@
+flutter clean
+flutter pub get
+flutter pub outdated
+
+# por si las dudas flutter pub upgrade --major-versions
