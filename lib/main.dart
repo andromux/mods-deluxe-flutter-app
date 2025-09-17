@@ -226,12 +226,26 @@ class ModManager {
               .replaceAll(RegExp(r'[()v]'), '') ??
           'N/A';
 
-      final desc = doc
-              .querySelector('div.bbWrapper')
-              ?.text
-              .replaceAll(RegExp(r'\s+'), ' ')
-              .substring(0, 200) ??
-          'N/A';
+      // ✨ Limpiar descripción removiendo imágenes y otros elementos HTML
+      final descElement = doc.querySelector('div.bbWrapper');
+      String desc = 'N/A';
+      
+      if (descElement != null) {
+        // Remover todas las etiquetas img
+        descElement.querySelectorAll('img').forEach((img) => img.remove());
+        
+        // Obtener texto limpio
+        desc = descElement.text
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+        
+        // Limitar a 200 caracteres
+        if (desc.length > 200) {
+          desc = '${desc.substring(0, 200)}...';
+        }
+        
+        if (desc.isEmpty) desc = 'N/A';
+      }
 
       final downloadTag =
           doc.querySelector('a[href*="download"]')?.attributes['href'];
