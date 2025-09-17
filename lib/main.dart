@@ -323,6 +323,7 @@ class _ModManagerAppState extends State<ModManagerApp> {
       'updated_mods_detail': 'Los siguientes mods tienen nuevas versiones:',
       'close': 'Cerrar',
       'added_on': 'Agregado el',
+      'creator_credit': 'por retired64',
     },
     'en': {
       'title': 'SM64 Mod Manager',
@@ -356,6 +357,7 @@ class _ModManagerAppState extends State<ModManagerApp> {
       'updated_mods_detail': 'The following mods have new versions:',
       'close': 'Close',
       'added_on': 'Added on',
+      'creator_credit': 'by retired64',
     }
   };
 
@@ -365,6 +367,20 @@ class _ModManagerAppState extends State<ModManagerApp> {
   void initState() {
     super.initState();
     manager.init().then((_) => setState(() {}));
+  }
+
+  // ✨ Función para abrir el canal de YouTube del creador
+  Future<void> _openCreatorChannel() async {
+    const youtubeUrl = 'https://www.youtube.com/@retired64'; // Cambiar por la URL correcta
+    try {
+      await launchUrl(Uri.parse(youtubeUrl));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al abrir el canal')),
+        );
+      }
+    }
   }
 
   Future<void> _addMod() async {
@@ -509,7 +525,24 @@ class _ModManagerAppState extends State<ModManagerApp> {
       theme: ThemeData.dark(),
       home: Scaffold(
         appBar: AppBar(
-          title: Text(t('title')),
+          title: Column(
+            children: [
+              Text(t('title')),
+              // ✨ Créditos del creador - clickeable
+              GestureDetector(
+                onTap: _openCreatorChannel,
+                child: Text(
+                  t('creator_credit'),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          centerTitle: true,
           actions: [
             IconButton(
               icon: refreshing 
