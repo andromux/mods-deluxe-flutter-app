@@ -17,15 +17,22 @@ class Mod {
   final String url;
   final String downloadUrl;
   final String tags;
+  final bool isPriority; // ✨ Nuevo: favoritos destacados
+  final DateTime addedDate; // ✨ Nuevo: fecha de agregado
+  final List<VersionHistory> versionHistory; // ✨ Nuevo: histórico
 
-  const Mod({
+  Mod({
     required this.title,
     required this.version,
     required this.description,
     required this.url,
     required this.downloadUrl,
     required this.tags,
-  });
+    this.isPriority = false,
+    DateTime? addedDate,
+    List<VersionHistory>? versionHistory,
+  }) : addedDate = addedDate ?? DateTime(2024, 1, 1),
+       versionHistory = versionHistory ?? const [];
 
   Map<String, dynamic> toJson() => {
         'title': title,
@@ -34,6 +41,9 @@ class Mod {
         'url': url,
         'download_url': downloadUrl,
         'tags': tags,
+        'is_priority': isPriority,
+        'added_date': addedDate.toIso8601String(),
+        'version_history': versionHistory.map((v) => v.toJson()).toList(),
       };
 
   factory Mod.fromJson(Map<String, dynamic> json) => Mod(
@@ -43,7 +53,60 @@ class Mod {
         url: json['url'],
         downloadUrl: json['download_url'],
         tags: json['tags'] ?? 'N/A',
+        isPriority: json['is_priority'] ?? false,
+        addedDate: json['added_date'] != null 
+            ? DateTime.parse(json['added_date'])
+            : DateTime.now(),
+        versionHistory: (json['version_history'] as List?)
+            ?.map((v) => VersionHistory.fromJson(v))
+            .toList() ?? [],
       );
+
+  Mod copyWith({
+    String? title,
+    String? version,
+    String? description,
+    String? url,
+    String? downloadUrl,
+    String? tags,
+    bool? isPriority,
+    DateTime? addedDate,
+    List<VersionHistory>? versionHistory,
+  }) => Mod(
+    title: title ?? this.title,
+    version: version ?? this.version,
+    description: description ?? this.description,
+    url: url ?? this.url,
+    downloadUrl: downloadUrl ?? this.downloadUrl,
+    tags: tags ?? this.tags,
+    isPriority: isPriority ?? this.isPriority,
+    addedDate: addedDate ?? this.addedDate,
+    versionHistory: versionHistory ?? this.versionHistory,
+  );
+}
+
+class VersionHistory {
+  final String version;
+  final DateTime date;
+  final String description;
+
+  VersionHistory({
+    required this.version,
+    required this.date,
+    required this.description,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'version': version,
+    'date': date.toIso8601String(),
+    'description': description,
+  };
+
+  factory VersionHistory.fromJson(Map<String, dynamic> json) => VersionHistory(
+    version: json['version'],
+    date: DateTime.parse(json['date']),
+    description: json['description'] ?? '',
+  );
 }
 
 class ModManager {
@@ -75,7 +138,20 @@ class ModManager {
 
     final mod = await _scrape(url);
     if (mod == null) return 'mod_error';
-    favorites.add(mod);
+    
+    // ✨ Agregar con fecha actual y primera entrada en histórico
+    final modWithHistory = mod.copyWith(
+      addedDate: DateTime.now(),
+      versionHistory: [
+        VersionHistory(
+          version: mod.version,
+          date: DateTime.now(),
+          description: mod.description,
+        )
+      ],
+    );
+    
+    favorites.add(modWithHistory);
     await _save();
     return 'mod_added';
   }
@@ -90,7 +166,49 @@ class ModManager {
     return false;
   }
 
-  // Método público para acceder al scraping desde la UI
+  // ✨ Alternar prioridad de un mod
+  Future<void> togglePriority(String url) async {
+    final index = favorites.indexWhere((m) => m.url == url);
+    if (index >= 0) {
+      favorites[index] = favorites[index].copyWith(
+        isPriority: !favorites[index].isPriority,
+      );
+      await _save();
+    }
+  }
+
+  // ✨ Obtener mods filtrados y ordenados
+  List<Mod> getFilteredMods(String searchQuery, String sortBy) {
+    var filtered = favorites.where((mod) {
+      final query = searchQuery.toLowerCase();
+      return mod.title.toLowerCase().contains(query) ||
+             mod.tags.toLowerCase().contains(query) ||
+             mod.version.toLowerCase().contains(query);
+    }).toList();
+
+    // Ordenar
+    switch (sortBy) {
+      case 'name':
+        filtered.sort((a, b) => a.title.compareTo(b.title));
+        break;
+      case 'version':
+        filtered.sort((a, b) => a.version.compareTo(b.version));
+        break;
+      case 'date':
+        filtered.sort((a, b) => b.addedDate.compareTo(a.addedDate));
+        break;
+      case 'priority':
+        filtered.sort((a, b) {
+          if (a.isPriority && !b.isPriority) return -1;
+          if (!a.isPriority && b.isPriority) return 1;
+          return a.title.compareTo(b.title);
+        });
+        break;
+    }
+
+    return filtered;
+  }
+
   Future<Mod?> scrapeMod(String url) async {
     return await _scrape(url);
   }
@@ -149,21 +267,27 @@ class ModManagerApp extends StatefulWidget {
 class _ModManagerAppState extends State<ModManagerApp> {
   final ModManager manager = ModManager();
   final TextEditingController urlCtrl = TextEditingController();
+  final TextEditingController searchCtrl = TextEditingController(); // ✨ Nuevo
   String lang = 'es';
   bool loading = false;
   bool refreshing = false;
   String refreshStatus = '';
+  String searchQuery = ''; // ✨ Nuevo
+  String sortBy = 'priority'; // ✨ Nuevo: priority, name, version, date
+  List<String> updatedModNames = []; // ✨ Para notificaciones detalladas
 
   final texts = {
     'es': {
       'title': 'SM64 Mod Manager',
       'url_hint': 'Pega la URL del mod…',
+      'search_hint': 'Buscar mods…',
       'add': 'Agregar',
       'view': 'Ver en la Web',
       'download': 'Descargar',
       'delete': 'Eliminar',
       'refresh': 'Actualizar Mods',
       'no_mods': 'No hay mods favoritos',
+      'no_results': 'No hay resultados para tu búsqueda',
       'processing': 'Procesando…',
       'invalid_url': 'URL inválida',
       'mod_exists': 'El mod ya existe',
@@ -175,16 +299,28 @@ class _ModManagerAppState extends State<ModManagerApp> {
       'mods_updated': 'mods actualizados',
       'checking_mod': 'Verificando mod',
       'of': 'de',
+      'sort_by': 'Ordenar por',
+      'priority': 'Prioridad',
+      'name': 'Nombre',
+      'version': 'Versión',
+      'date': 'Fecha',
+      'priority_mod': 'Mod prioritario',
+      'updated_mods_title': 'Mods Actualizados',
+      'updated_mods_detail': 'Los siguientes mods tienen nuevas versiones:',
+      'close': 'Cerrar',
+      'added_on': 'Agregado el',
     },
     'en': {
       'title': 'SM64 Mod Manager',
       'url_hint': 'Paste mod URL…',
+      'search_hint': 'Search mods…',
       'add': 'Add',
       'view': 'View Web',
       'download': 'Download',
       'delete': 'Delete',
       'refresh': 'Update Mods',
       'no_mods': 'No favorite mods',
+      'no_results': 'No results for your search',
       'processing': 'Processing…',
       'invalid_url': 'Invalid URL',
       'mod_exists': 'Mod already exists',
@@ -196,6 +332,16 @@ class _ModManagerAppState extends State<ModManagerApp> {
       'mods_updated': 'mods updated',
       'checking_mod': 'Checking mod',
       'of': 'of',
+      'sort_by': 'Sort by',
+      'priority': 'Priority',
+      'name': 'Name',
+      'version': 'Version',
+      'date': 'Date',
+      'priority_mod': 'Priority mod',
+      'updated_mods_title': 'Updated Mods',
+      'updated_mods_detail': 'The following mods have new versions:',
+      'close': 'Close',
+      'added_on': 'Added on',
     }
   };
 
@@ -231,13 +377,20 @@ class _ModManagerAppState extends State<ModManagerApp> {
     }
   }
 
-  // ✨ Función principal de actualización
+  // ✨ Alternar prioridad
+  Future<void> _togglePriority(String url) async {
+    await manager.togglePriority(url);
+    setState(() {});
+  }
+
+  // ✨ Función mejorada de actualización con notificaciones detalladas
   Future<void> _refreshMods() async {
     if (manager.favorites.isEmpty) return;
     
     setState(() {
       refreshing = true;
       refreshStatus = '';
+      updatedModNames.clear();
     });
 
     int updatedCount = 0;
@@ -246,32 +399,41 @@ class _ModManagerAppState extends State<ModManagerApp> {
     for (int i = 0; i < manager.favorites.length; i++) {
       final oldMod = manager.favorites[i];
       
-      // Actualizar estado de progreso
       setState(() {
         refreshStatus = '${t('checking_mod')} ${i + 1} ${t('of')} $totalMods';
       });
 
       try {
-        // Scrape la versión actual del mod
         final updatedMod = await manager.scrapeMod(oldMod.url);
 
-        // Si se obtuvo el mod y la versión cambió, actualizar
         if (updatedMod != null && updatedMod.version != oldMod.version) {
-          manager.favorites[i] = updatedMod;
+          // ✨ Crear nuevo histórico de versiones
+          final newHistory = List<VersionHistory>.from(oldMod.versionHistory);
+          newHistory.add(VersionHistory(
+            version: updatedMod.version,
+            date: DateTime.now(),
+            description: updatedMod.description,
+          ));
+
+          // Actualizar mod con nueva versión y histórico
+          manager.favorites[i] = updatedMod.copyWith(
+            isPriority: oldMod.isPriority,
+            addedDate: oldMod.addedDate,
+            versionHistory: newHistory,
+          );
+          
           updatedCount++;
+          updatedModNames.add('${oldMod.title} (${oldMod.version} → ${updatedMod.version})');
         }
       } catch (e) {
-        // Si hay error en un mod específico, continuar con el siguiente
         print('Error actualizando mod ${oldMod.title}: $e');
       }
 
-      // Esperar 2 segundos entre cada solicitud para no saturar la web
       if (i < manager.favorites.length - 1) {
         await Future.delayed(const Duration(seconds: 2));
       }
     }
 
-    // Guardar cambios
     await manager._save();
     
     setState(() {
@@ -279,26 +441,62 @@ class _ModManagerAppState extends State<ModManagerApp> {
       refreshStatus = '';
     });
 
-    // Mostrar resultado
-    if (mounted) {
+    // ✨ Mostrar diálogo detallado si hay actualizaciones
+    if (mounted && updatedCount > 0) {
+      _showUpdatedModsDialog(updatedCount);
+    } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${t('refresh_complete')}: $updatedCount ${t('mods_updated')}'),
-          duration: const Duration(seconds: 3),
-        ),
+        SnackBar(content: Text('${t('refresh_complete')}: 0 ${t('mods_updated')}')),
       );
     }
   }
 
+  // ✨ Diálogo de mods actualizados
+  void _showUpdatedModsDialog(int count) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(t('updated_mods_title')),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${t('refresh_complete')}: $count ${t('mods_updated')}'),
+              const SizedBox(height: 16),
+              if (updatedModNames.isNotEmpty) ...[
+                Text(t('updated_mods_detail')),
+                const SizedBox(height: 8),
+                ...updatedModNames.map((name) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text('• $name', style: const TextStyle(fontSize: 12)),
+                )),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(t('close')),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // ✨ Obtener mods filtrados
+    final filteredMods = manager.getFilteredMods(searchQuery, sortBy);
+
     return MaterialApp(
       theme: ThemeData.dark(),
       home: Scaffold(
         appBar: AppBar(
           title: Text(t('title')),
           actions: [
-            // ✨ Botón de actualizar mods
             IconButton(
               icon: refreshing 
                 ? const SizedBox(
@@ -325,6 +523,7 @@ class _ModManagerAppState extends State<ModManagerApp> {
         ),
         body: Column(
           children: [
+            // ✨ Barra de agregar mod
             Padding(
               padding: const EdgeInsets.all(8),
               child: Row(
@@ -353,8 +552,44 @@ class _ModManagerAppState extends State<ModManagerApp> {
                 ],
               ),
             ),
+
+            // ✨ Barra de búsqueda y filtros
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      controller: searchCtrl,
+                      decoration: InputDecoration(
+                        hintText: t('search_hint'),
+                        prefixIcon: const Icon(Icons.search),
+                        filled: true,
+                        fillColor: Colors.grey[850],
+                        isDense: true,
+                      ),
+                      onChanged: (value) => setState(() => searchQuery = value),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButton<String>(
+                      value: sortBy,
+                      isExpanded: true,
+                      items: [
+                        DropdownMenuItem(value: 'priority', child: Text(t('priority'))),
+                        DropdownMenuItem(value: 'name', child: Text(t('name'))),
+                        DropdownMenuItem(value: 'version', child: Text(t('version'))),
+                        DropdownMenuItem(value: 'date', child: Text(t('date'))),
+                      ],
+                      onChanged: (v) => setState(() => sortBy = v!),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             
-            // ✨ Mostrar estado de actualización
             if (refreshing)
               Container(
                 width: double.infinity,
@@ -362,10 +597,7 @@ class _ModManagerAppState extends State<ModManagerApp> {
                 color: Colors.blue.withOpacity(0.1),
                 child: Column(
                   children: [
-                    Text(
-                      t('refreshing'),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                    Text(t('refreshing'), style: const TextStyle(fontWeight: FontWeight.bold)),
                     if (refreshStatus.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(refreshStatus, style: const TextStyle(fontSize: 12)),
@@ -375,14 +607,20 @@ class _ModManagerAppState extends State<ModManagerApp> {
               ),
 
             Expanded(
-              child: manager.favorites.isEmpty
-                  ? Center(child: Text(t('no_mods')))
+              child: filteredMods.isEmpty
+                  ? Center(
+                      child: Text(
+                        manager.favorites.isEmpty ? t('no_mods') : t('no_results'),
+                      ),
+                    )
                   : ListView.builder(
-                      itemCount: manager.favorites.length,
+                      itemCount: filteredMods.length,
                       itemBuilder: (c, i) {
-                        final m = manager.favorites[i];
+                        final m = filteredMods[i];
                         return Card(
                           margin: const EdgeInsets.all(8),
+                          // ✨ Resaltar mods prioritarios
+                          color: m.isPriority ? Colors.amber.withOpacity(0.1) : null,
                           child: Padding(
                             padding: const EdgeInsets.all(12),
                             child: Column(
@@ -390,35 +628,57 @@ class _ModManagerAppState extends State<ModManagerApp> {
                               children: [
                                 Row(
                                   children: [
+                                    // ✨ Icono de prioridad
+                                    if (m.isPriority)
+                                      const Icon(Icons.star, color: Colors.amber, size: 18),
+                                    if (m.isPriority) const SizedBox(width: 4),
                                     Expanded(
-                                        child: Text(m.title,
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.bold))),
-                                    Text('v${m.version}',
-                                        style: const TextStyle(
-                                            fontStyle: FontStyle.italic)),
+                                      child: Text(
+                                        m.title,
+                                        style: const TextStyle(fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    Text(
+                                      'v${m.version}',
+                                      style: const TextStyle(fontStyle: FontStyle.italic),
+                                    ),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
-                                Text('Tags: ${m.tags}',
-                                    style:
-                                        const TextStyle(color: Colors.grey)),
+                                Text(
+                                  'Tags: ${m.tags}',
+                                  style: const TextStyle(color: Colors.grey),
+                                ),
+                                Text(
+                                  '${t('added_on')}: ${m.addedDate.day}/${m.addedDate.month}/${m.addedDate.year}',
+                                  style: const TextStyle(color: Colors.grey, fontSize: 11),
+                                ),
                                 const SizedBox(height: 4),
                                 Text(m.description),
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
-                                    TextButton(
-                                        onPressed: () => launchUrl(Uri.parse(m.url)),
-                                        child: Text(t('view'))),
-                                    TextButton(
-                                        onPressed: () => launchUrl(Uri.parse(m.downloadUrl)),
-                                        child: Text(t('download'))),
+                                    // ✨ Botón de prioridad
                                     IconButton(
-                                      icon: const Icon(Icons.delete,
-                                          color: Colors.red),
+                                      icon: Icon(
+                                        m.isPriority ? Icons.star : Icons.star_border,
+                                        color: m.isPriority ? Colors.amber : Colors.grey,
+                                      ),
+                                      onPressed: () => _togglePriority(m.url),
+                                      tooltip: t('priority_mod'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => launchUrl(Uri.parse(m.url)),
+                                      child: Text(t('view')),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => launchUrl(Uri.parse(m.downloadUrl)),
+                                      child: Text(t('download')),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, color: Colors.red),
                                       onPressed: (refreshing) ? null : () => _remove(m.url),
-                                    )
+                                    ),
                                   ],
                                 )
                               ],
