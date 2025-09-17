@@ -1,4 +1,4 @@
-package com.example.deluxemanager
+package com.deluxemanager.deluxe
 
 import io.flutter.embedding.android.FlutterActivity
 
