@@ -1,5 +1,79 @@
 # deluxemanager
 
+# Guía rápida (comandos) — crear AppImage desde `build/linux/x64/release/bundle/`
+
+Copia y pega estos comandos desde la raíz de tu proyecto (`~/aplicaciones_flutter/deluxemanager`). Son un **cheat-sheet** paso a paso:
+
+```bash
+# 0) Moverse al proyecto
+cd ~/aplicaciones_flutter/deluxemanager
+
+# 1) (opcional si ya lo hiciste) Compilar release
+flutter build linux --release
+
+# 2) Definir nombre AppDir y crear estructura
+APP=deluxemanager.AppDir
+mkdir -p "$APP"/usr/bin
+
+# 3) Copiar bundle de Flutter al AppDir
+cp -r build/linux/x64/release/bundle/* "$APP"/usr/bin/
+
+# 4) Crear AppRun (lanzador)
+cat > "$APP"/AppRun <<'EOF'
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/deluxemanager" "$@"
+EOF
+chmod +x "$APP"/AppRun
+
+# 5) Crear archivo .desktop (ajusta Name/Comment si quieres)
+cat > "$APP"/deluxemanager.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Deluxe Manager
+Exec=deluxemanager
+Icon=deluxemanager
+Categories=Utility;
+EOF
+chmod 644 "$APP"/deluxemanager.desktop
+
+# 6) Añadir icono (reemplaza path/to/icon.png)
+# - copia también a usr/share/icons para mayor compatibilidad
+mkdir -p "$APP"/usr/share/icons/hicolor/256x256/apps
+cp path/to/icon.png "$APP"/deluxemanager.png
+cp path/to/icon.png "$APP"/usr/share/icons/hicolor/256x256/apps/deluxemanager.png
+
+# 7) Asegurarse de que el binario sea ejecutable
+chmod +x "$APP"/usr/bin/deluxemanager
+
+# 8) Instalar appimagetool (intenta apt; si no está, descarga desde GitHub Releases)
+sudo apt update
+sudo apt install appimagetool
+# Si no lo tienes en repos: descarga manual desde https://github.com/AppImage/AppImageKit/releases
+# y pon el binario en /usr/local/bin/appimagetool con permisos ejecutables.
+
+# 9) Construir AppImage
+appimagetool "$APP"
+
+# 10) Hacer ejecutable y probar el AppImage generado
+chmod +x *.AppImage
+./$(ls *.AppImage | head -n1)
+
+# 11) (opcional) limpiar AppDir
+rm -rf "$APP"
+```
+
+**Notas/Consejos rápidos**
+
+* El `.desktop` debe llamarse exactamente `deluxemanager.desktop` y estar en la raíz del AppDir (junto a `AppRun`).
+* `Icon=deluxemanager` busca `deluxemanager.png` en la raíz o en `usr/share/icons/...`.
+* Si quieres reducir tamaño: puedes `strip -s "$APP"/usr/bin/deluxemanager` **(haz backup primero)**.
+* Si quieres versionar el AppImage, renómbralo después de crear:
+  `mv *.AppImage DeluxeManager-1.0-x86_64.AppImage`
+
+generar AppImage
+appimagetool deluxemanager.AppDir
+
 SM64 Mod Manager – Guía para Developers
 1. Descripción del proyecto
 
