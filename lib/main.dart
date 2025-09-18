@@ -424,17 +424,17 @@ class _ModManagerAppState extends State<ModManagerApp> {
       urlCtrl.clear();
     });
     if (msgKey != null && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(t(msgKey))));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t(msgKey))));
     }
   }
 
   Future<void> _remove(String url) async {
     final ok = await manager.removeFavorite(url);
-    if (ok && mounted) {
-      setState(() {});
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(t('mod_deleted'))));
+    if (ok) {
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('mod_deleted'))));
+      }
     }
   }
 
