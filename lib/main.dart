@@ -5,8 +5,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' as html;
-import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:external_path/external_path.dart'; // Importar el paquete external_path
+import 'package:permission_handler/permission_handler.dart'; // Importar el paquete permission_handler
 
 void main() => runApp(const ModManagerApp());
 
@@ -17,9 +18,9 @@ class Mod {
   final String url;
   final String downloadUrl;
   final String tags;
-  final bool isPriority; // ✨ Nuevo: favoritos destacados
-  final DateTime addedDate; // ✨ Nuevo: fecha de agregado
-  final List<VersionHistory> versionHistory; // ✨ Nuevo: histórico
+  final bool isPriority;
+  final DateTime addedDate;
+  final List<VersionHistory> versionHistory;
 
   Mod({
     required this.title,
@@ -114,22 +115,41 @@ class ModManager {
   List<Mod> favorites = [];
 
   Future<void> init() async {
-    final dir = await getApplicationSupportDirectory();
-    final appDir = Directory('${dir.path}/sm64_mod_manager');
+    // Obtener la ruta del directorio público de documentos para Android
+    final documentsPath = await ExternalPath.getExternalStoragePublicDirectory(
+        ExternalPath.DIRECTORY_DOCUMENTS);
+
+    // Crear la ruta completa para la carpeta y el archivo
+    final appDir = Directory('$documentsPath/deluxe-manager');
+    
+    // Verificar si el directorio existe, y si no, crearlo.
     await appDir.create(recursive: true);
+
     _dataFile = File('${appDir.path}/favorites.json');
+
     if (await _dataFile.exists()) {
-      final raw = await _dataFile.readAsString();
-      if (raw.isNotEmpty) {
-        final list = jsonDecode(raw) as List;
-        favorites = list.map((e) => Mod.fromJson(e)).toList();
+      try {
+        final raw = await _dataFile.readAsString();
+        if (raw.isNotEmpty) {
+          final list = jsonDecode(raw) as List;
+          favorites = list.map((e) => Mod.fromJson(e)).toList();
+        }
+      } catch (e) {
+        print("Error leyendo favorites.json: $e");
+        await _dataFile.writeAsString('[]');
       }
+    } else {
+      await _dataFile.writeAsString('[]');
     }
   }
 
   Future<void> _save() async {
-    final data = jsonEncode(favorites.map((e) => e.toJson()).toList());
-    await _dataFile.writeAsString(data);
+    try {
+      final data = jsonEncode(favorites.map((e) => e.toJson()).toList());
+      await _dataFile.writeAsString(data);
+    } catch (e) {
+      print("Error guardando favorites.json: $e");
+    }
   }
 
   Future<String?> addFavorite(String url) async {
@@ -139,7 +159,6 @@ class ModManager {
     final mod = await _scrape(url);
     if (mod == null) return 'mod_error';
     
-    // ✨ Agregar con fecha actual y primera entrada en histórico
     final modWithHistory = mod.copyWith(
       addedDate: DateTime.now(),
       versionHistory: [
@@ -166,7 +185,6 @@ class ModManager {
     return false;
   }
 
-  // ✨ Alternar prioridad de un mod
   Future<void> togglePriority(String url) async {
     final index = favorites.indexWhere((m) => m.url == url);
     if (index >= 0) {
@@ -177,7 +195,6 @@ class ModManager {
     }
   }
 
-  // ✨ Obtener mods filtrados y ordenados
   List<Mod> getFilteredMods(String searchQuery, String sortBy) {
     var filtered = favorites.where((mod) {
       final query = searchQuery.toLowerCase();
@@ -186,7 +203,6 @@ class ModManager {
              mod.version.toLowerCase().contains(query);
     }).toList();
 
-    // Ordenar
     switch (sortBy) {
       case 'name':
         filtered.sort((a, b) => a.title.compareTo(b.title));
@@ -226,20 +242,16 @@ class ModManager {
               .replaceAll(RegExp(r'[()v]'), '') ??
           'N/A';
 
-      // ✨ Limpiar descripción removiendo imágenes y otros elementos HTML
       final descElement = doc.querySelector('div.bbWrapper');
       String desc = 'N/A';
       
       if (descElement != null) {
-        // Remover todas las etiquetas img
         descElement.querySelectorAll('img').forEach((img) => img.remove());
         
-        // Obtener texto limpio
         desc = descElement.text
             .replaceAll(RegExp(r'\s+'), ' ')
             .trim();
         
-        // Limitar a 200 caracteres
         if (desc.length > 200) {
           desc = '${desc.substring(0, 200)}...';
         }
@@ -281,14 +293,14 @@ class ModManagerApp extends StatefulWidget {
 class _ModManagerAppState extends State<ModManagerApp> {
   final ModManager manager = ModManager();
   final TextEditingController urlCtrl = TextEditingController();
-  final TextEditingController searchCtrl = TextEditingController(); // ✨ Nuevo
+  final TextEditingController searchCtrl = TextEditingController();
   String lang = 'es';
   bool loading = false;
   bool refreshing = false;
   String refreshStatus = '';
-  String searchQuery = ''; // ✨ Nuevo
-  String sortBy = 'priority'; // ✨ Nuevo: priority, name, version, date
-  List<String> updatedModNames = []; // ✨ Para notificaciones detalladas
+  String searchQuery = '';
+  String sortBy = 'priority';
+  List<String> updatedModNames = [];
 
   final texts = {
     'es': {
@@ -366,12 +378,23 @@ class _ModManagerAppState extends State<ModManagerApp> {
   @override
   void initState() {
     super.initState();
+    _requestPermissions();
     manager.init().then((_) => setState(() {}));
   }
 
-  // ✨ Función para abrir el canal de YouTube del creador
+  // Nueva función para solicitar permisos de almacenamiento
+  Future<void> _requestPermissions() async {
+    final status = await Permission.storage.request();
+    if (status.isGranted) {
+      print('Permisos de almacenamiento concedidos.');
+    } else {
+      print('Permisos de almacenamiento denegados.');
+      // Opcional: mostrar un mensaje al usuario explicando por qué se necesitan los permisos.
+    }
+  }
+
   Future<void> _openCreatorChannel() async {
-    const youtubeUrl = 'https://www.youtube.com/@retired64'; // Cambiar por la URL correcta
+    const youtubeUrl = 'https://www.youtube.com/@retired64';
     try {
       await launchUrl(Uri.parse(youtubeUrl));
     } catch (e) {
@@ -407,13 +430,11 @@ class _ModManagerAppState extends State<ModManagerApp> {
     }
   }
 
-  // ✨ Alternar prioridad
   Future<void> _togglePriority(String url) async {
     await manager.togglePriority(url);
     setState(() {});
   }
 
-  // ✨ Función mejorada de actualización con notificaciones detalladas
   Future<void> _refreshMods() async {
     if (manager.favorites.isEmpty) return;
     
@@ -437,7 +458,6 @@ class _ModManagerAppState extends State<ModManagerApp> {
         final updatedMod = await manager.scrapeMod(oldMod.url);
 
         if (updatedMod != null && updatedMod.version != oldMod.version) {
-          // ✨ Crear nuevo histórico de versiones
           final newHistory = List<VersionHistory>.from(oldMod.versionHistory);
           newHistory.add(VersionHistory(
             version: updatedMod.version,
@@ -445,7 +465,6 @@ class _ModManagerAppState extends State<ModManagerApp> {
             description: updatedMod.description,
           ));
 
-          // Actualizar mod con nueva versión y histórico
           manager.favorites[i] = updatedMod.copyWith(
             isPriority: oldMod.isPriority,
             addedDate: oldMod.addedDate,
@@ -471,7 +490,6 @@ class _ModManagerAppState extends State<ModManagerApp> {
       refreshStatus = '';
     });
 
-    // ✨ Mostrar diálogo detallado si hay actualizaciones
     if (mounted && updatedCount > 0) {
       _showUpdatedModsDialog(updatedCount);
     } else if (mounted) {
@@ -481,7 +499,6 @@ class _ModManagerAppState extends State<ModManagerApp> {
     }
   }
 
-  // ✨ Diálogo de mods actualizados
   void _showUpdatedModsDialog(int count) {
     showDialog(
       context: context,
@@ -518,7 +535,6 @@ class _ModManagerAppState extends State<ModManagerApp> {
 
   @override
   Widget build(BuildContext context) {
-    // ✨ Obtener mods filtrados
     final filteredMods = manager.getFilteredMods(searchQuery, sortBy);
 
     return MaterialApp(
@@ -528,7 +544,6 @@ class _ModManagerAppState extends State<ModManagerApp> {
           title: Column(
             children: [
               Text(t('title')),
-              // ✨ Créditos del creador - clickeable
               GestureDetector(
                 onTap: _openCreatorChannel,
                 child: Text(
@@ -570,7 +585,6 @@ class _ModManagerAppState extends State<ModManagerApp> {
         ),
         body: Column(
           children: [
-            // ✨ Barra de agregar mod
             Padding(
               padding: const EdgeInsets.all(8),
               child: Row(
@@ -600,7 +614,6 @@ class _ModManagerAppState extends State<ModManagerApp> {
               ),
             ),
 
-            // ✨ Barra de búsqueda y filtros
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
@@ -666,7 +679,6 @@ class _ModManagerAppState extends State<ModManagerApp> {
                         final m = filteredMods[i];
                         return Card(
                           margin: const EdgeInsets.all(8),
-                          // ✨ Resaltar mods prioritarios
                           color: m.isPriority ? Colors.amber.withOpacity(0.1) : null,
                           child: Padding(
                             padding: const EdgeInsets.all(12),
@@ -675,7 +687,6 @@ class _ModManagerAppState extends State<ModManagerApp> {
                               children: [
                                 Row(
                                   children: [
-                                    // ✨ Icono de prioridad
                                     if (m.isPriority)
                                       const Icon(Icons.star, color: Colors.amber, size: 18),
                                     if (m.isPriority) const SizedBox(width: 4),
@@ -705,7 +716,6 @@ class _ModManagerAppState extends State<ModManagerApp> {
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
-                                    // ✨ Botón de prioridad
                                     IconButton(
                                       icon: Icon(
                                         m.isPriority ? Icons.star : Icons.star_border,
