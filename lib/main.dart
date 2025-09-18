@@ -6,8 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' as html;
 import 'package:url_launcher/url_launcher.dart';
-import 'package:external_path/external_path.dart'; // Importar el paquete external_path
-import 'package:permission_handler/permission_handler.dart'; // Importar el paquete permission_handler
+import 'package:external_path/external_path.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
 
 void main() => runApp(const ModManagerApp());
 
@@ -115,14 +116,19 @@ class ModManager {
   List<Mod> favorites = [];
 
   Future<void> init() async {
-    // Obtener la ruta del directorio público de documentos para Android
-    final documentsPath = await ExternalPath.getExternalStoragePublicDirectory(
-        ExternalPath.DIRECTORY_DOCUMENTS);
+    String basePath;
+    if (Platform.isAndroid) {
+      // Usa external_path para almacenamiento externo en Android
+      basePath = await ExternalPath.getExternalStoragePublicDirectory(
+          ExternalPath.DIRECTORY_DOCUMENTS);
+    } else {
+      // Usa path_provider para el directorio de documentos en otras plataformas
+      final dir = await getApplicationDocumentsDirectory();
+      basePath = dir.path;
+    }
 
-    // Crear la ruta completa para la carpeta y el archivo
-    final appDir = Directory('$documentsPath/deluxe-manager');
+    final appDir = Directory('$basePath/deluxe-manager');
     
-    // Verificar si el directorio existe, y si no, crearlo.
     await appDir.create(recursive: true);
 
     _dataFile = File('${appDir.path}/favorites.json');
@@ -378,18 +384,20 @@ class _ModManagerAppState extends State<ModManagerApp> {
   @override
   void initState() {
     super.initState();
-    _requestPermissions();
+    // La solicitud de permisos solo es necesaria en Android
+    if (Platform.isAndroid) {
+      _requestPermissions();
+    }
     manager.init().then((_) => setState(() {}));
   }
 
-  // Nueva función para solicitar permisos de almacenamiento
+  // Se solicita permisos solo si es un dispositivo Android
   Future<void> _requestPermissions() async {
     final status = await Permission.storage.request();
     if (status.isGranted) {
       print('Permisos de almacenamiento concedidos.');
     } else {
       print('Permisos de almacenamiento denegados.');
-      // Opcional: mostrar un mensaje al usuario explicando por qué se necesitan los permisos.
     }
   }
 
