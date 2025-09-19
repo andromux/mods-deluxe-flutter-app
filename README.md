@@ -4,6 +4,21 @@
 - [AI Chat for this Project](https://deepwiki.com/andromux/mods-deluxe-flutter-app)
 
 
+<div align="center">
+
+  <h3>¿Did you like this repository?</h3>
+  <p>Give me a star or make a fork if you want to contribute!</p>
+
+  <a href="https://github.com/andromux/mods-deluxe-flutter-app/stargazers">
+    <img src="https://img.shields.io/github/stars/andromux/flet-app-github-search?style=social" alt="GitHub Stars mods-deluxe-flutter-app"/>
+  </a>
+
+  <a href="https://github.com/andromux/mods-deluxe-flutter-app/fork">
+    <img src="https://img.shields.io/github/forks/andromux/mods-deluxe-flutter-app?style=social" alt="GitHub Forks mods-deluxe-flutter-app"/>
+  </a>
+
+</div>
+
 ## General Architecture
 
 This project is organized following a **layered architecture pattern** that clearly separates responsibilities:
