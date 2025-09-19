@@ -1,5 +1,7 @@
 # Documentación del Proyecto Flutter - SM64 Mod Manager
 
+- [Chat de Inteligencia Artificial de este proyecto](https://deepwiki.com/andromux/mods-deluxe-flutter-app)
+
 ## Arquitectura General
 
 Este proyecto está organizado siguiendo el patrón de **arquitectura por capas** que separa claramente las responsabilidades:
