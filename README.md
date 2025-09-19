@@ -1,132 +1,167 @@
-# deluxemanager
+# Flutter Project Documentation - SM64 Mod Manager
 
-# Guía rápida (comandos) — crear AppImage desde `build/linux/x64/release/bundle/`
+- [Leer Manual en español](./README-ES.md)
 
-Copia y pega estos comandos desde la raíz de tu proyecto (`~/aplicaciones_flutter/deluxemanager`). Son un **cheat-sheet** paso a paso:
 
-```bash
-# 0) Moverse al proyecto
-cd ~/aplicaciones_flutter/deluxemanager
+## General Architecture
 
-# 1) (opcional si ya lo hiciste) Compilar release
-flutter build linux --release
+This project is organized following a **layered architecture pattern** that clearly separates responsibilities:
+- **Presentation** (UI/Widgets)
+- **Business Logic** (Services)
+- **Data** (Models)
+- **Configuration** (App/Main)
+- **Resources** (Localization)
 
-# 2) Definir nombre AppDir y crear estructura
-APP=deluxemanager.AppDir
-mkdir -p "$APP"/usr/bin
+This structure facilitates maintenance, testing, scalability, and team collaboration.
 
-# 3) Copiar bundle de Flutter al AppDir
-cp -r build/linux/x64/release/bundle/* "$APP"/usr/bin/
+---
 
-# 4) Crear AppRun (lanzador)
-cat > "$APP"/AppRun <<'EOF'
-#!/bin/sh
-HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/deluxemanager" "$@"
-EOF
-chmod +x "$APP"/AppRun
+## Root Files
 
-# 5) Crear archivo .desktop (ajusta Name/Comment si quieres)
-cat > "$APP"/deluxemanager.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Deluxe Manager
-Exec=deluxemanager
-Icon=deluxemanager
-Categories=Utility;
-EOF
-chmod 644 "$APP"/deluxemanager.desktop
+### **main.dart**
+**Responsibility**: Single, minimalist entry point of the application.
+- **What it does**: Executes the `main()` function that initializes `ModManagerApp`
+- **Why it's important**: Keeps startup simple and delegates all configuration to `app.dart`
+- **Relationships**: Imports and executes `ModManagerApp` from `app.dart`
+- **Scalability benefit**: Being minimalist allows configuration changes without touching the entry point
 
-# 6) Añadir icono (reemplaza path/to/icon.png)
-# - copia también a usr/share/icons para mayor compatibilidad
-mkdir -p "$APP"/usr/share/icons/hicolor/256x256/apps
-cp path/to/icon.png "$APP"/deluxemanager.png
-cp path/to/icon.png "$APP"/usr/share/icons/hicolor/256x256/apps/deluxemanager.png
+### **app.dart**
+**Responsibility**: Central configuration of the Flutter application.
+- **What it does**: Defines the `MaterialApp` with dark theme, title, and initial route to `HomePage`
+- **Why it's important**: Centralizes global configurations (theme, routes, future localization)
+- **Relationships**: Imports `HomePage` and sets it as the initial screen
+- **Scalability benefit**: Makes it easy to add new routes, themes, or global configurations without impacting other files
 
-# 7) Asegurarse de que el binario sea ejecutable
-chmod +x "$APP"/usr/bin/deluxemanager
+---
 
-# 8) Instalar appimagetool (intenta apt; si no está, descarga desde GitHub Releases)
-sudo apt update
-sudo apt install appimagetool
-# Si no lo tienes en repos: descarga manual desde https://github.com/AppImage/AppImageKit/releases
-# y pon el binario en /usr/local/bin/appimagetool con permisos ejecutables.
+## `models/` Folder
 
-# 9) Construir AppImage
-appimagetool "$APP"
+### **mod.dart**
+**Responsibility**: Main data model representing an SM64 mod.
+- **What it does**: Defines the `Mod` structure with properties like title, version, description, URL, etc.
+- **Key functionalities**:
+  - JSON serialization (`toJson()`, `fromJson()`) for persistence
+  - `copyWith()` method for creating immutable copies
+  - Validation and default values
+- **Why it's important**: It's the data heart of the application - everything revolves around mods
+- **Relationships**: Used by `ModManager`, `HomePage`, `ModCard`, and references `VersionHistory`
+- **Scalability benefit**: Centralizes data structure, facilitating schema changes and validations
 
-# 10) Hacer ejecutable y probar el AppImage generado
-chmod +x *.AppImage
-./$(ls *.AppImage | head -n1)
+### **version_history.dart**
+**Responsibility**: Model for version history of each mod.
+- **What it does**: Simple structure with version, date, and change description
+- **Key functionalities**: JSON serialization to save complete history
+- **Why it's important**: Allows tracking updates and changes in mods over time
+- **Relationships**: Used within the `Mod` model as a history list
+- **Scalability benefit**: Allows adding additional fields to history without breaking existing functionality
 
-# 11) (opcional) limpiar AppDir
-rm -rf "$APP"
-```
+---
 
-**Notas/Consejos rápidos**
+## `services/` Folder
 
-* El `.desktop` debe llamarse exactamente `deluxemanager.desktop` y estar en la raíz del AppDir (junto a `AppRun`).
-* `Icon=deluxemanager` busca `deluxemanager.png` en la raíz o en `usr/share/icons/...`.
-* Si quieres reducir tamaño: puedes `strip -s "$APP"/usr/bin/deluxemanager` **(haz backup primero)**.
-* Si quieres versionar el AppImage, renómbralo después de crear:
-  `mv *.AppImage DeluxeManager-1.0-x86_64.AppImage`
+### **mod_manager.dart**
+**Responsibility**: Central business logic and application service layer.
+- **What it does**:
+  - **Storage management**: Handles JSON files in local/external storage
+  - **Web scraping**: Extracts mod information from URLs using `html` parser
+  - **CRUD operations**: Add, remove, update favorites
+  - **Filtering and sorting**: Searches and mod classification
+  - **Permission management**: Handles storage permissions on Android
+- **Why it's important**: Separates all complex logic from UI, making code more testable and maintainable
+- **Relationships**:
+  - Uses `Mod` and `VersionHistory` models
+  - Consumed by `HomePage` for all data operations
+- **Scalability benefit**:
+  - Allows changing storage implementation without affecting UI
+  - Facilitates unit testing of business logic
+  - Enables adding new data sources (API, database)
 
-generar AppImage
-appimagetool deluxemanager.AppDir
+---
 
-SM64 Mod Manager – Guía para Developers
-1. Descripción del proyecto
+## `pages/` Folder
 
-SM64 Mod Manager es una aplicación Flutter que permite:
+### **home_page.dart**
+**Responsibility**: Main screen and user interface controller.
+- **What it does**:
+  - **State management**: Handles loading, refreshing, filters, language
+  - **User interactions**: Add mods, searches, updates
+  - **Service coordination**: Connects UI with `ModManager`
+  - **External navigation**: URL handling (YouTube, mod downloads)
+  - **Permission management**: Requests storage permissions on Android
+- **Why it's important**: It's the main orchestrator connecting services with widgets
+- **Relationships**:
+  - Uses `ModManager` for data operations
+  - Uses `ModCard` to display each mod
+  - Uses `AppStrings` for translations
+  - Consumes `Mod` and `VersionHistory` models
+- **Scalability benefit**: Separating into pages allows adding new screens and navigation without impacting central logic
 
-Guardar mods favoritos de una página web.
+---
 
-Extraer información básica de cada mod: título, versión, descripción, tags, URL y enlace de descarga.
+## `widgets/` Folder
 
-Guardar localmente la lista de mods en un archivo JSON (favorites.json).
+### **mod_card.dart**
+**Responsibility**: Reusable widget to display individual mod information.
+- **What it does**:
+  - **Data presentation**: Shows title, version, tags, description
+  - **Visual indicators**: Marks priority mods with star
+  - **Action buttons**: View web, download, delete, toggle priority
+  - **State adaptation**: Disables during refresh operations
+- **Why it's important**: Separates mod presentation logic from the rest of the application
+- **Relationships**:
+  - Receives `Mod` model as parameter
+  - Receives callbacks from `HomePage` for actions
+  - Uses translation function passed as parameter
+- **Scalability benefit**:
+  - Reusable in other screens (e.g., details screen)
+  - Easy to modify design without impacting business logic
+  - Testable in isolation
 
-Abrir el mod en la web o descargarlo.
+---
 
-Eliminar mods de la lista.
+## `l10n/` Folder
 
-El proyecto está pensado para Android, iOS y Desktop (Windows/Linux/macOS).
+### **strings.dart**
+**Responsibility**: Text centralization and multi-language support (ES/EN).
+- **What it does**:
+  - **Stores translations**: Map with texts in Spanish and English
+  - **Provides interface**: Clear structure to access texts by key
+  - **Localization support**: Base for complete internationalization
+- **Why it's important**: Centralizes all texts, facilitating translations and maintenance
+- **Relationships**:
+  - Used by `HomePage` to get translated texts
+  - Passed as parameter to `ModCard` via translation function
+- **Scalability benefit**:
+  - Easy to add new languages
+  - Facilitates finding and modifying texts
+  - Base for implementing automatic localization by device region
 
-2. Estructura principal
-Archivos principales
+---
 
-main.dart: Contiene toda la lógica de la app (UI y backend).
+## Architectural Benefits
 
-Dependencias externas usadas:
+### **Separation of Concerns**
+Each file has a clear and specific responsibility, avoiding spaghetti code.
 
-http: Para hacer requests HTTP.
+### **Testability**
+- `ModManager` can be tested without UI
+- `ModCard` can be tested with mock data
+- Models can be validated independently
 
-html: Para parsear contenido HTML.
+### **Scalability**
+- **New screens**: Add to `pages/` without modifying logic
+- **New widgets**: Create in `widgets/` reusing services
+- **New data sources**: Modify only `ModManager`
+- **New languages**: Add to `AppStrings`
 
-path_provider: Para obtener rutas de almacenamiento seguro.
+### **Maintainability**
+- Bugs are easily located by responsibility
+- UI changes don't affect business logic
+- Refactoring is safer with clear dependencies
 
-url_launcher: Para abrir URLs en navegador.
+### **Team Collaboration**
+- Developers can work in parallel on different layers
+- Code reviews are more focused by responsibility
+- Onboarding new developers is faster with clear structure
 
-flutter/material.dart: Para UI básica.
-
-Clases principales
-
-Mod
-
-Modelo que representa un mod.
-
-Propiedades:
-
-A new Flutter project.
-
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+This architecture allows the project to grow sustainably, maintaining code quality and facilitating long-term maintenance.
