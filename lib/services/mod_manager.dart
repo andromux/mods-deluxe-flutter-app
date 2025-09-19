@@ -20,18 +20,18 @@ class ModManager {
   /// Inicializa el manager y carga datos persistidos
   Future<void> init() async {
     String basePath;
+
     if (Platform.isAndroid) {
-      // Usa external_path para almacenamiento externo en Android
+      // Fuerza a escribir en Documents en Android
       basePath = await ExternalPath.getExternalStoragePublicDirectory(
           ExternalPath.DIRECTORY_DOCUMENTS);
     } else {
-      // Usa path_provider para el directorio de documentos en otras plataformas
+      // Para otras plataformas
       final dir = await getApplicationDocumentsDirectory();
       basePath = dir.path;
     }
 
     final appDir = Directory('$basePath/deluxe-manager');
-    
     await appDir.create(recursive: true);
 
     _dataFile = File('${appDir.path}/favorites.json');
@@ -52,7 +52,7 @@ class ModManager {
     }
   }
 
-  /// Guarda la lista de favoritos en archivo JSON (método público)
+  /// Guarda la lista de favoritos en archivo JSON
   Future<void> save() async {
     try {
       final data = jsonEncode(favorites.map((e) => e.toJson()).toList());
@@ -62,10 +62,8 @@ class ModManager {
     }
   }
 
-  /// Método privado interno para guardar
-  Future<void> _save() async {
-    await save();
-  }
+  /// Método interno para guardar automáticamente
+  Future<void> _save() async => save();
 
   /// Agrega un mod a favoritos desde una URL
   /// Retorna clave de mensaje para mostrar resultado
@@ -75,7 +73,7 @@ class ModManager {
 
     final mod = await _scrape(url);
     if (mod == null) return 'mod_error';
-    
+
     final modWithHistory = mod.copyWith(
       addedDate: DateTime.now(),
       versionHistory: [
@@ -86,7 +84,7 @@ class ModManager {
         )
       ],
     );
-    
+
     favorites.add(modWithHistory);
     await _save();
     return 'mod_added';
@@ -146,9 +144,7 @@ class ModManager {
   }
 
   /// Scrappea información de un mod desde una URL pública
-  Future<Mod?> scrapeMod(String url) async {
-    return await _scrape(url);
-  }
+  Future<Mod?> scrapeMod(String url) async => await _scrape(url);
 
   /// Método privado que realiza el scraping web
   Future<Mod?> _scrape(String url) async {
@@ -166,18 +162,18 @@ class ModManager {
 
       final descElement = doc.querySelector('div.bbWrapper');
       String desc = 'N/A';
-      
+
       if (descElement != null) {
         descElement.querySelectorAll('img').forEach((img) => img.remove());
-        
+
         desc = descElement.text
             .replaceAll(RegExp(r'\s+'), ' ')
             .trim();
-        
+
         if (desc.length > 200) {
           desc = '${desc.substring(0, 200)}...';
         }
-        
+
         if (desc.isEmpty) desc = 'N/A';
       }
 
