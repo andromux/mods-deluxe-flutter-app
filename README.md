@@ -1,4 +1,4 @@
-# Flutter Project Documentation - SM64 Mod Manager
+# Flutter Project Documentation - SM64COOPDX Mod Manager
 
 - [Leer Manual en español](./README-ES.md)
 - [AI Chat for this Project](https://deepwiki.com/andromux/mods-deluxe-flutter-app)
