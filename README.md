@@ -10,7 +10,7 @@
   <p>Give me a star or make a fork if you want to contribute!</p>
 
   <a href="https://github.com/andromux/mods-deluxe-flutter-app/stargazers">
-    <img src="https://img.shields.io/github/stars/andromux/flet-app-github-search?style=social" alt="GitHub Stars mods-deluxe-flutter-app"/>
+    <img src="https://img.shields.io/github/stars/andromux/mods-deluxe-flutter-app?style=social" alt="GitHub Stars mods-deluxe-flutter-app"/>
   </a>
 
   <a href="https://github.com/andromux/mods-deluxe-flutter-app/fork">
