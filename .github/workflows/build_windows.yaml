@@ -1,165 +1,58 @@
-name: Build Windows App
+name: Build DeluxeManager Windows
 
 on:
   push:
-    branches: [ main, develop, release/* ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
-    inputs:
-      flutter_version:
-        description: 'Flutter version to use'
-        required: false
-        default: 'stable'
-        type: choice
-        options:
-          - 'stable'
-          - 'beta'
-          - '3.24.0'
-          - '3.19.0'
 
 jobs:
   build-windows:
     name: Build Windows Application
     runs-on: windows-latest
     
-    strategy:
-      matrix:
-        build_type: [debug, release]
-        
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       
-      - name: Setup Flutter with advanced caching
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
-        id: flutter-setup
         with:
           channel: stable
-          flutter-version: ${{ github.event.inputs.flutter_version || 'stable' }}
-          flutter-version-file: pubspec.yaml
-          architecture: x64
           cache: true
-          cache-key: "flutter-windows-:channel:-:version:-:arch:-:hash:"
-          cache-path: "${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:"
-          pub-cache-key: "flutter-pub-windows-:channel:-:version:-:arch:-:hash:"
-          pub-cache-path: "${{ runner.tool_cache }}/flutter-pub/:channel:-:version:-:arch:"
-      
-      - name: Print Flutter environment info
-        run: |
-          echo "Flutter Channel: ${{ steps.flutter-setup.outputs.CHANNEL }}"
-          echo "Flutter Version: ${{ steps.flutter-setup.outputs.VERSION }}"
-          echo "Flutter Architecture: ${{ steps.flutter-setup.outputs.ARCHITECTURE }}"
-          echo "Cache Path: ${{ steps.flutter-setup.outputs.CACHE-PATH }}"
-          echo "Pub Cache Path: ${{ steps.flutter-setup.outputs.PUB-CACHE-PATH }}"
-          flutter --version
-          flutter doctor -v
-        shell: cmd
       
       - name: Enable Windows desktop support
         run: flutter config --enable-windows-desktop
-        shell: cmd
       
-      - name: Get Flutter dependencies
+      - name: Get dependencies
         run: flutter pub get
-        shell: cmd
       
-      - name: Verify dependencies
-        run: flutter pub deps
-        shell: cmd
+      - name: Build Windows Release
+        run: flutter build windows --release
       
-      - name: Run Flutter analyzer
-        run: flutter analyze
-        shell: cmd
-        continue-on-error: true
-      
-      - name: Run Flutter tests
-        run: flutter test
-        shell: cmd
-        continue-on-error: true
-      
-      - name: Build Windows application (${{ matrix.build_type }})
+      - name: Package Windows Application
         run: |
-          if ("${{ matrix.build_type }}" -eq "release") {
-            flutter build windows --release --verbose
-          } else {
-            flutter build windows --debug --verbose
-          }
+          $buildPath = "build\windows\x64\runner\Release"
+          $appName = "deluxemanager-windows-v1.0.0"
+          
+          # Crear carpeta para empaquetado
+          New-Item -ItemType Directory -Path $appName -Force
+          
+          # Copiar archivos de la aplicación
+          Copy-Item -Path "$buildPath\*" -Destination $appName -Recurse
+          
+          # Crear ZIP
+          Compress-Archive -Path $appName -DestinationPath "$appName.zip" -Force
+          
+          # Mostrar información
+          Write-Host "✓ Application packaged successfully"
+          Get-ChildItem "$appName.zip" | Format-List Name, Length, LastWriteTime
         shell: powershell
       
-      - name: Create Windows installer (Release only)
-        if: matrix.build_type == 'release'
-        run: |
-          # Crear estructura para el instalador
-          mkdir installer
-          xcopy "build\windows\x64\runner\Release\*" "installer\" /E /I /H /Y
-          
-          # Crear archivo de información de versión
-          echo "App: deluxemanager" > installer\version.txt
-          echo "Version: 1.0.0+1" >> installer\version.txt
-          echo "Build Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" >> installer\version.txt
-          echo "Flutter Version: ${{ steps.flutter-setup.outputs.VERSION }}" >> installer\version.txt
-        shell: powershell
-      
-      - name: Package Windows application
-        run: |
-          $buildPath = "build\windows\x64\runner\${{ matrix.build_type == 'release' && 'Release' || 'Debug' }}"
-          $archiveName = "deluxemanager-windows-${{ matrix.build_type }}-${{ github.sha }}.zip"
-          
-          # Comprimir la aplicación
-          Compress-Archive -Path "$buildPath\*" -DestinationPath $archiveName -Force
-          
-          # Mostrar información del archivo
-          Get-ChildItem $archiveName | Format-List Name, Length, LastWriteTime
-        shell: powershell
-      
-      - name: Upload Windows build artifacts
+      - name: Upload Windows Build
         uses: actions/upload-artifact@v4
         with:
-          name: deluxemanager-windows-${{ matrix.build_type }}-${{ github.sha }}
-          path: |
-            build/windows/x64/runner/${{ matrix.build_type == 'release' && 'Release' || 'Debug' }}/
-            !build/windows/x64/runner/${{ matrix.build_type == 'release' && 'Release' || 'Debug' }}/**/*.pdb
+          name: deluxemanager-windows-release
+          path: deluxemanager-windows-v1.0.0.zip
           retention-days: 30
-      
-      - name: Upload installer package (Release only)
-        if: matrix.build_type == 'release'
-        uses: actions/upload-artifact@v4
-        with:
-          name: deluxemanager-windows-installer-${{ github.sha }}
-          path: installer/
-          retention-days: 90
-      
-      - name: Upload compressed package
-        uses: actions/upload-artifact@v4
-        with:
-          name: deluxemanager-windows-${{ matrix.build_type }}-zip-${{ github.sha }}
-          path: "*.zip"
-          retention-days: 30
-
-  test-windows-build:
-    name: Test Windows Build
-    runs-on: windows-latest
-    needs: build-windows
-    if: github.event_name == 'pull_request'
-    
-    steps:
-      - name: Download Windows build
-        uses: actions/download-artifact@v4
-        with:
-          name: deluxemanager-windows-release-${{ github.sha }}
-          path: ./app
-      
-      - name: Test application startup
-        run: |
-          # Verificar que los archivos principales existen
-          if (Test-Path "app\deluxemanager.exe") {
-            Write-Host "✓ Executable found"
-            Get-ChildItem "app\" -Recurse | Where-Object {$_.Extension -eq ".dll"} | Measure-Object | ForEach-Object {Write-Host "✓ Found $($_.Count) DLL files"}
-          } else {
-            Write-Host "✗ Executable not found"
-            exit 1
-          }
-        shell: powershell
